@@ -86,7 +86,9 @@ class MainActivity : ComponentActivity() {
                 fileChooserCallback?.onReceiveValue(null)
                 fileChooserCallback = callback
                 return try {
-                    fileChooser.launch(params?.createIntent())
+                    val intent = params?.createIntent()
+                        ?: throw IllegalStateException("No FileChooserParams")
+                    fileChooser.launch(intent)
                     true
                 } catch (e: Exception) {
                     fileChooserCallback = null
