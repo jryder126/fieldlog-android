@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#16181c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>FIELDLOG — 8-Week Base</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-64.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="application-name" content="Fieldlog">
+<meta name="apple-mobile-web-app-title" content="Fieldlog">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<style>
+  :root{
+    --bg:#16181c; --panel:#1e2127; --panel2:#23272e; --line:#2e333c;
+    --ink:#e8e9ec; --muted:#8a909b; --faint:#5c626d;
+    --amber:#e0972e; --amber-dim:#7a5a23; --olive:#7f9a55; --olive-dim:#3c4a2c;
+    --red:#c5563f;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,"Roboto Mono",monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)}
+  body{padding-bottom:env(safe-area-inset-bottom);line-height:1.45}
+  .wrap{max-width:640px;margin:0 auto;padding:0 14px 64px}
+
+  /* Header */
+  header{position:sticky;top:0;z-index:20;background:rgba(22,24,28,.92);
+    backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+    padding:14px 14px 10px;margin:0 -14px 0}
+  .brand{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+  .brand h1{font-size:19px;letter-spacing:.32em;font-weight:700;margin:0;text-transform:uppercase}
+  .brand .sub{font-family:var(--mono);font-size:10.5px;color:var(--faint);letter-spacing:.18em;text-transform:uppercase}
+  .progress{margin-top:10px;height:5px;background:var(--panel2);border-radius:3px;overflow:hidden}
+  .progress > i{display:block;height:100%;width:0;background:var(--olive);transition:width .3s}
+
+  /* Week strip */
+  .weeks{display:flex;gap:6px;overflow-x:auto;padding:10px 0 4px;scrollbar-width:none}
+  .weeks::-webkit-scrollbar{display:none}
+  .wk{flex:0 0 auto;min-width:46px;text-align:center;padding:7px 4px;border:1px solid var(--line);
+    border-radius:8px;background:var(--panel);font-family:var(--mono);cursor:pointer;user-select:none}
+  .wk .n{font-size:15px;font-weight:600}
+  .wk .l{font-size:8.5px;color:var(--faint);letter-spacing:.12em;text-transform:uppercase}
+  .wk.active{border-color:var(--amber);background:#2a2618}
+  .wk.active .n{color:var(--amber)}
+  .wk.deload{border-style:dashed}
+  .wk .ring{font-size:8px;color:var(--olive);height:9px;line-height:9px}
+
+  .phase{font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.12em;
+    text-transform:uppercase;margin:14px 2px 2px}
+  .phase b{color:var(--amber);font-weight:600}
+
+  /* Day cards */
+  .day{background:var(--panel);border:1px solid var(--line);border-radius:12px;margin-top:12px;overflow:hidden}
+  .day.rest{opacity:.6}
+  .dhead{display:flex;align-items:center;gap:10px;padding:13px 14px;cursor:pointer}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--faint);flex:0 0 auto}
+  .dot.s{background:var(--amber)} .dot.r{background:#4f93c4}
+  .day.done .dot{background:var(--olive)}
+  .dhead .dn{font-family:var(--mono);font-size:10px;color:var(--faint);letter-spacing:.16em;
+    text-transform:uppercase;width:34px;flex:0 0 auto}
+  .dhead .dt{font-weight:600;font-size:15px;flex:1}
+  .dhead .dt small{display:block;font-weight:400;font-size:11.5px;color:var(--muted);letter-spacing:.02em}
+  .chev{color:var(--faint);font-size:13px;transition:transform .2s;font-family:var(--mono)}
+  .day.open .chev{transform:rotate(90deg)}
+  .check{font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--olive);text-transform:uppercase}
+
+  .body{display:none;border-top:1px solid var(--line);padding:4px 14px 14px}
+  .day.open .body{display:block}
+
+  /* Exercise rows */
+  .ex{padding:12px 0;border-bottom:1px solid var(--line)}
+  .ex:last-of-type{border-bottom:none}
+  .ex .top{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+  .ex .name{font-weight:600;font-size:14.5px}
+  .ex .scheme{font-family:var(--mono);font-size:11px;color:var(--amber);white-space:nowrap}
+  .ex .target{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:3px}
+  .ex .target b{color:var(--ink)}
+  .inputs{display:flex;gap:8px;margin-top:9px;flex-wrap:wrap}
+  .fld{flex:1;min-width:64px}
+  .fld label{display:block;font-family:var(--mono);font-size:9px;color:var(--faint);
+    letter-spacing:.12em;text-transform:uppercase;margin-bottom:3px}
+  .fld input{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--ink);
+    border-radius:7px;padding:9px 8px;font-family:var(--mono);font-size:15px;text-align:center}
+  .fld input:focus{outline:none;border-color:var(--amber)}
+  .note input{text-align:left;font-family:var(--sans)}
+  .accy{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin-top:10px;line-height:1.6}
+  .accy b{color:var(--faint);letter-spacing:.1em;text-transform:uppercase;font-size:9.5px}
+
+  .runbox .cue{font-size:13.5px;color:var(--ink);margin:2px 0 4px}
+  .runbox .why{font-size:12px;color:var(--muted)}
+  .runbox .pacetag{font-family:var(--mono);font-size:12px;color:var(--amber);margin:3px 0 5px;letter-spacing:.02em;line-height:1.5}
+
+  .btn{display:inline-block;border:1px solid var(--line);background:var(--panel2);color:var(--ink);
+    border-radius:8px;padding:11px 14px;font-family:var(--mono);font-size:12px;letter-spacing:.08em;
+    text-transform:uppercase;cursor:pointer;text-align:center}
+  .btn:active{transform:translateY(1px)}
+  .btn.go{background:var(--olive-dim);border-color:var(--olive);color:#dfeccb}
+  .day.done .btn.go{background:var(--panel2);border-color:var(--line);color:var(--muted)}
+  .markrow{margin-top:14px}
+  .markrow .btn{width:100%}
+
+  /* Maxes / settings panel */
+  .tabbar{display:flex;gap:6px;margin:14px 0 0}
+  .tab{flex:1;text-align:center;padding:9px;border:1px solid var(--line);border-radius:8px;
+    background:var(--panel);font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--muted);cursor:pointer}
+  .tab.active{border-color:var(--amber);color:var(--amber)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-top:12px}
+  .card h2{font-size:13px;letter-spacing:.14em;text-transform:uppercase;margin:0 0 4px;color:var(--ink)}
+  .card p{font-size:12.5px;color:var(--muted);margin:0 0 12px}
+  .maxgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .maxgrid .fld input{text-align:center}
+  .unitrow{display:flex;gap:8px;margin-bottom:14px;align-items:center}
+  .unitrow span{font-family:var(--mono);font-size:10px;color:var(--faint);letter-spacing:.12em;text-transform:uppercase}
+  .seg{display:flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+  .seg button{background:var(--panel2);border:none;color:var(--muted);padding:7px 14px;
+    font-family:var(--mono);font-size:12px;cursor:pointer}
+  .seg button.on{background:var(--amber);color:#16181c;font-weight:600}
+  .dataline{display:flex;gap:8px;margin-top:10px}
+  .dataline .btn{flex:1}
+  .hint{font-size:11.5px;color:var(--faint);margin-top:12px;line-height:1.6}
+  .danger{color:var(--red);border-color:var(--amber-dim)}
+  .bw-row{display:flex;gap:8px;align-items:flex-end}
+  .bwlog{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:12px;max-height:140px;overflow:auto}
+  .bwlog div{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--line)}
+  footer{text-align:center;font-family:var(--mono);font-size:10px;color:var(--faint);
+    letter-spacing:.1em;margin-top:26px}
+
+  /* Warm-up block */
+  .warm{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:11px 12px;margin:8px 0 4px}
+  .warm .wh{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--amber);margin-bottom:6px}
+  .warm .wl{font-size:12.5px;color:var(--muted);line-height:1.65}
+  .warm .ramp{font-family:var(--mono);font-size:12px;color:var(--ink);margin-top:7px;line-height:1.7}
+  .warm .ramp b{color:var(--amber)}
+
+  /* 1RM estimator */
+  .calcrow{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .calcrow .fld.wide{grid-column:1 / -1}
+  .selrow select{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--ink);
+    border-radius:7px;padding:10px 8px;font-family:var(--mono);font-size:14px}
+  .e1rm{margin-top:14px;padding:12px;border:1px dashed var(--amber-dim);border-radius:9px;background:#221d12}
+  .e1rm .big{font-family:var(--mono);font-size:26px;color:var(--amber);font-weight:700;line-height:1}
+  .e1rm .lab{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint)}
+  .e1rm .tm{font-family:var(--mono);font-size:13px;color:var(--ink);margin-top:8px}
+  .e1rm .tm b{color:var(--olive)}
+
+  /* Chart */
+  .chartseg{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+  .chartseg button{flex:1;min-width:62px;background:var(--panel2);border:1px solid var(--line);color:var(--muted);
+    border-radius:7px;padding:8px 4px;font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;
+    text-transform:uppercase;cursor:pointer}
+  .chartseg button.on{border-color:var(--amber);color:var(--amber);background:#2a2618}
+  .chartwrap{width:100%;overflow:hidden}
+  .chartwrap svg{width:100%;height:auto;display:block}
+  .chartempty{font-family:var(--mono);font-size:12px;color:var(--faint);text-align:center;padding:30px 10px;line-height:1.7}
+  .chartmeta{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:8px}
+  .chartmeta b{color:var(--ink)}
+
+  .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(20px);
+    background:var(--olive);color:#16181c;font-family:var(--mono);font-size:12px;font-weight:600;
+    padding:11px 18px;border-radius:9px;opacity:0;transition:.25s;z-index:50;letter-spacing:.05em;
+    pointer-events:none;max-width:90%}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <h1>Fieldlog</h1>
+      <div class="sub">8-WK BASE · STRENGTH + RUN</div>
+    </div>
+    <div class="progress"><i id="prog"></i></div>
+    <div class="weeks" id="weeks"></div>
+  </header>
+
+  <div class="tabbar">
+    <div class="tab active" data-view="train">Training</div>
+    <div class="tab" data-view="maxes">Maxes &amp; Data</div>
+  </div>
+
+  <div id="view-train">
+    <div class="phase" id="phase"></div>
+    <div id="days"></div>
+  </div>
+
+  <div id="view-maxes" style="display:none">
+    <div class="card">
+      <h2>Training Maxes</h2>
+      <p>Set these once. Targets across the plan are calculated from them. Use ~90% of a real max, or a weight you can do for a solid 5 reps — start conservative.</p>
+      <div class="unitrow">
+        <span>Units</span>
+        <div class="seg" id="unitseg">
+          <button data-u="lb">lb</button><button data-u="kg">kg</button>
+        </div>
+      </div>
+      <div class="maxgrid">
+        <div class="fld"><label>Back Squat</label><input id="m-squat" type="number" inputmode="decimal" placeholder="0"></div>
+        <div class="fld"><label>Bench Press</label><input id="m-bench" type="number" inputmode="decimal" placeholder="0"></div>
+        <div class="fld"><label>Deadlift</label><input id="m-deadlift" type="number" inputmode="decimal" placeholder="0"></div>
+        <div class="fld"><label>Weighted Pull-up (added)</label><input id="m-pullup" type="number" inputmode="decimal" placeholder="0"></div>
+      </div>
+      <p class="hint">Pull-up max is the <b>added</b> weight on top of bodyweight. Enter 0 if you train bodyweight only — the app will show "BW" plus any small percentage as added load.</p>
+    </div>
+
+    <div class="card">
+      <h2>1RM Estimator</h2>
+      <p>Don't know your max? Enter a recent set you took close to failure (≤10 reps is most accurate) and let it estimate your one-rep max — then drop a sensible training max straight into the plan.</p>
+      <div class="selrow" style="margin-bottom:10px">
+        <select id="c-lift">
+          <option value="squat">Back Squat</option>
+          <option value="bench">Bench Press</option>
+          <option value="deadlift">Deadlift</option>
+        </select>
+      </div>
+      <div class="calcrow">
+        <div class="fld"><label>Weight lifted</label><input id="c-wt" type="number" inputmode="decimal" placeholder="0"></div>
+        <div class="fld"><label>Reps done</label><input id="c-reps" type="number" inputmode="numeric" placeholder="0"></div>
+      </div>
+      <div class="e1rm" id="e1rm" style="display:none">
+        <div class="lab">Estimated 1RM</div>
+        <div class="big"><span id="e1rm-val">—</span> <span id="e1rm-unit"></span></div>
+        <div class="tm">Suggested training max (90%): <b id="e1rm-tm">—</b></div>
+        <div class="dataline"><button class="btn go" id="c-apply">Set as training max</button></div>
+      </div>
+      <p class="hint">Estimate only — it averages two standard formulas. The training max is deliberately ~90% so your working sets stay crisp. Pull-ups aren't estimated here; set that one by feel.</p>
+    </div>
+
+    <div class="card">
+      <h2>Running Paces</h2>
+      <p>Give one reference and the plan shows target paces on every run. A recent timed mile is most accurate; if you don't have one, just enter the pace your easy runs feel like.</p>
+      <div class="unitrow">
+        <span>Per</span>
+        <div class="seg" id="paceseg">
+          <button data-pu="mi">mile</button><button data-pu="km">km</button>
+        </div>
+      </div>
+      <div class="calcrow">
+        <div class="fld"><label>Recent timed mile/km</label><input id="r-tt" type="text" inputmode="numeric" placeholder="7:30"></div>
+        <div class="fld"><label>or current easy pace</label><input id="r-easy" type="text" inputmode="numeric" placeholder="10:00"></div>
+      </div>
+      <div class="e1rm" id="pacebox" style="display:none">
+        <div class="lab">Your target paces</div>
+        <div class="tm" style="margin-top:6px">Easy / long: <b id="p-easy">—</b></div>
+        <div class="tm">Tempo: <b id="p-tempo">—</b></div>
+      </div>
+      <p class="hint">Enter as <b>mm:ss</b>. Paces are estimates derived with standard offsets — adjust by feel, and keep easy runs truly easy (the single most common mistake). Strides and the long run all stay at easy effort.</p>
+    </div>
+
+    <div class="card">
+      <h2>Trends</h2>
+      <p>Your logged numbers over time. Strength lines plot the working weight you recorded each session; bodyweight plots your weigh-ins.</p>
+      <div class="chartseg" id="chartseg">
+        <button data-m="bodyweight" class="on">Bodyweight</button>
+        <button data-m="squat">Squat</button>
+        <button data-m="bench">Bench</button>
+        <button data-m="deadlift">Deadlift</button>
+      </div>
+      <div class="chartwrap" id="chartwrap"></div>
+      <div class="chartmeta" id="chartmeta"></div>
+    </div>
+
+    <div class="card">
+      <h2>Bodyweight</h2>
+      <div class="bw-row">
+        <div class="fld" style="flex:1"><label>Today's weight</label><input id="bw-in" type="number" inputmode="decimal" placeholder="0"></div>
+        <button class="btn go" id="bw-add" style="flex:0 0 auto">Log</button>
+      </div>
+      <div class="bwlog" id="bwlog"></div>
+    </div>
+
+    <div class="card">
+      <h2>Backup &amp; Transfer</h2>
+      <p>Export saves everything — maxes, logs, bodyweight — to one file. Keep it safe. When you get an updated version of this app, open it and import that file to carry your history forward.</p>
+      <div class="dataline" id="installrow" style="display:none">
+        <button class="btn go" id="install">Install app on this device</button>
+      </div>
+      <div class="dataline">
+        <button class="btn go" id="export">Export data</button>
+        <button class="btn" id="import">Import data</button>
+      </div>
+      <input id="file" type="file" accept="application/json,.json" hidden>
+      <div class="dataline">
+        <button class="btn danger" id="reset">Erase all data</button>
+      </div>
+      <p class="hint">Your data lives only on this device, in this app. Clearing your browser data or removing the app can wipe it — export regularly. The export file is versioned, so future versions know how to read it.</p>
+    </div>
+  </div>
+
+  <footer>FIELDLOG v3 · TRAIN HARD · LOG HONEST</footer>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+/* ============================= PLAN DATA ============================= */
+const SCHEMA_VERSION = 2;
+const APP_VERSION = "v3";
+
+// Main cluster wave (Squat / Bench / Weighted Pull-up) — same load all 3 strength days that week.
+// pct is % of training max. deadlift has its own lighter wave (Friday only).
+const WEEKS = [
+  {w:1, phase:"On-ramp", deload:false, cluster:{sets:3,reps:5,pct:65}, dl:{sets:3,reps:5,pct:65},
+   run:{tue:"20 min easy", thu:"20 min easy", sat:"25 min easy"}, strides:false, tempo:null},
+  {w:2, phase:"On-ramp", deload:false, cluster:{sets:4,reps:5,pct:70}, dl:{sets:3,reps:5,pct:70},
+   run:{tue:"22 min easy", thu:"24 min easy", sat:"30 min easy"}, strides:false, tempo:null},
+  {w:3, phase:"Build", deload:false, cluster:{sets:4,reps:5,pct:75}, dl:{sets:3,reps:3,pct:77.5},
+   run:{tue:"24 min easy", thu:"26 min easy + 6×20s strides", sat:"33 min easy"}, strides:true, tempo:null},
+  {w:4, phase:"Build", deload:false, cluster:{sets:5,reps:3,pct:80}, dl:{sets:3,reps:3,pct:82.5},
+   run:{tue:"26 min easy", thu:"28 min easy + 6×20s strides", sat:"38 min easy"}, strides:true, tempo:null},
+  {w:5, phase:"Build", deload:false, cluster:{sets:4,reps:5,pct:72.5}, dl:{sets:3,reps:5,pct:72.5},
+   run:{tue:"28 min easy", thu:"10 min easy, 2×6 min tempo, 8 min easy", sat:"40 min easy"}, strides:false, tempo:true},
+  {w:6, phase:"Deload", deload:true, cluster:{sets:3,reps:5,pct:67.5}, dl:{sets:2,reps:5,pct:67.5},
+   run:{tue:"20 min easy", thu:"22 min easy", sat:"28 min easy"}, strides:false, tempo:null},
+  {w:7, phase:"Peak", deload:false, cluster:{sets:4,reps:4,pct:80}, dl:{sets:3,reps:3,pct:82.5},
+   run:{tue:"30 min easy", thu:"10 min easy, 3×6 min tempo, 8 min easy", sat:"43 min easy"}, strides:false, tempo:true},
+  {w:8, phase:"Peak / test", deload:false, cluster:{sets:3,reps:3,pct:85}, dl:{sets:2,reps:3,pct:87.5},
+   run:{tue:"28 min easy", thu:"24 min easy + 6×20s strides", sat:"45 min easy"}, strides:true, tempo:null},
+];
+
+const ACCESSORIES = {
+  A:"Push-ups 3× max-2 · Hanging leg raise 3×10 · 10 min mobility",
+  B:"1-arm DB row 3×10/side · Plank 3×45s · Band face-pull 3×15",
+  C:"Walking lunge 3×10/side · Back extension 3×12 · Farmer carry 3×40m",
+};
+
+// Day template per week
+function daysFor(week){
+  const c = week.cluster, dl = week.dl;
+  const sc = `${c.sets}×${c.reps} @ ${c.pct}%`;
+  return [
+    {key:"mon", dn:"Mon", type:"s", title:"Strength A", sub:"Squat · Bench · Pull-up",
+      lifts:[lift("squat","Back Squat",sc,c.pct),lift("bench","Bench Press",sc,c.pct),lift("pullup","Weighted Pull-up",sc,c.pct,true)],
+      accy:ACCESSORIES.A},
+    {key:"tue", dn:"Tue", type:"r", title:"Easy run", sub:week.run.tue, run:{cue:week.run.tue, kind:"easy", strides:false, why:"Conversational pace — you should be able to talk. Building the aerobic base and durability."}},
+    {key:"wed", dn:"Wed", type:"s", title:"Strength B", sub:"Squat · Bench · Pull-up",
+      lifts:[lift("squat","Back Squat",sc,c.pct),lift("bench","Bench Press",sc,c.pct),lift("pullup","Weighted Pull-up",sc,c.pct,true)],
+      accy:ACCESSORIES.B},
+    {key:"thu", dn:"Thu", type:"r", title:week.tempo?"Tempo run":"Easy run", sub:week.run.thu, run:{cue:week.run.thu, kind:week.tempo?"tempo":"easy", strides:!!week.strides&&!week.tempo, why:week.tempo?"Tempo = comfortably hard, controlled. Easy jog between/around the hard pieces.":"Easy aerobic. Add strides (relaxed near-sprints, not all-out) if prescribed."}},
+    {key:"fri", dn:"Fri", type:"s", title:"Strength C", sub:"Squat · Bench · Pull-up · Deadlift",
+      lifts:[lift("squat","Back Squat",sc,c.pct),lift("bench","Bench Press",sc,c.pct),lift("pullup","Weighted Pull-up",sc,c.pct,true),lift("deadlift","Deadlift",`${dl.sets}×${dl.reps} @ ${dl.pct}%`,dl.pct)],
+      accy:ACCESSORIES.C},
+    {key:"sat", dn:"Sat", type:"r", title:"Long run", sub:week.run.sat, run:{cue:week.run.sat, kind:"long", strides:false, why:"All easy. This is your weekly endurance builder — keep it slow, finish feeling you could do more."}},
+    {key:"sun", dn:"Sun", type:"rest", title:"Rest", sub:"Walk, stretch, recover", rest:true},
+  ];
+}
+function lift(id,name,scheme,pct,added){return {id,name,scheme,pct,added:!!added};}
+
+/* ============================= STATE ============================= */
+const DEFAULT_STATE = {
+  schemaVersion: SCHEMA_VERSION,
+  appVersion: APP_VERSION,
+  units: "lb",
+  maxes: {squat:"", bench:"", deadlift:"", pullup:""},
+  bodyweight: [],     // [{date, w}]
+  run: {unit:"mi", tt:"", easy:""},   // pace reference: timed mile/km OR current easy pace (mm:ss)
+  log: {},            // key `w{n}-{day}` -> {done, entries:{liftId:{wt,reps,rpe}}, run:{dur,dist,note}, note}
+  ui: {week:1}
+};
+let S = load();
+
+function load(){
+  try{
+    const raw = localStorage.getItem("fieldlog");
+    if(!raw) return structuredClone(DEFAULT_STATE);
+    const parsed = JSON.parse(raw);
+    return migrate(parsed);
+  }catch(e){ return structuredClone(DEFAULT_STATE); }
+}
+function save(){ try{ localStorage.setItem("fieldlog", JSON.stringify(S)); }catch(e){} }
+
+// Forward-compatible migration: fill any missing fields from defaults.
+function migrate(data){
+  const out = structuredClone(DEFAULT_STATE);
+  if(typeof data!=="object"||!data) return out;
+  if(data.units==="lb"||data.units==="kg") out.units=data.units;
+  if(data.maxes) for(const k in out.maxes){ if(data.maxes[k]!=null) out.maxes[k]=data.maxes[k]; }
+  if(Array.isArray(data.bodyweight)) out.bodyweight=data.bodyweight;
+  if(data.run && typeof data.run==="object"){
+    if(data.run.unit==="mi"||data.run.unit==="km") out.run.unit=data.run.unit;
+    if(typeof data.run.tt==="string") out.run.tt=data.run.tt;
+    if(typeof data.run.easy==="string") out.run.easy=data.run.easy;
+  }
+  if(data.log && typeof data.log==="object") out.log=data.log;
+  if(data.ui && data.ui.week) out.ui.week=data.ui.week;
+  out.schemaVersion=SCHEMA_VERSION; out.appVersion=APP_VERSION;
+  return out;
+}
+
+/* ============================= HELPERS ============================= */
+function roundLoad(x){
+  const step = S.units==="kg" ? 2.5 : 5;
+  return Math.round(x/step)*step;
+}
+function targetFor(lift){
+  const tm = parseFloat(S.maxes[lift.id]);
+  if(lift.id==="pullup"){
+    if(isNaN(tm)||tm<=0) return "BW";
+    return "BW + " + roundLoad(tm*lift.pct/100) + " " + S.units;
+  }
+  if(isNaN(tm)||tm<=0) return "set max →";
+  return roundLoad(tm*lift.pct/100) + " " + S.units;
+}
+function lkey(week,day){return `w${week}-${day}`;}
+
+/* ---- pace helpers ---- */
+function parsePace(str){
+  if(!str) return NaN;
+  str=(""+str).trim();
+  if(str.indexOf(":")>=0){
+    const [m,s]=str.split(":");
+    const mm=parseInt(m,10), ss=parseInt(s,10);
+    if(isNaN(mm)||isNaN(ss)) return NaN;
+    return mm*60+ss;
+  }
+  const f=parseFloat(str); // bare minutes
+  return isNaN(f)?NaN:Math.round(f*60);
+}
+function fmtPace(sec){
+  if(isNaN(sec)||sec<=0) return "—";
+  sec=Math.round(sec);
+  const m=Math.floor(sec/60), s=sec%60;
+  return m+":"+String(s).padStart(2,"0");
+}
+// Returns {easyLo,easyHi,tempoLo,tempoHi} in sec per current pace unit, or null.
+function derivePaces(){
+  const unit=S.run.unit||"mi";
+  const f = unit==="km" ? 1/1.609 : 1; // scale per-mile offsets to per-km
+  const tt=parsePace(S.run.tt);
+  const easy=parsePace(S.run.easy);
+  if(!isNaN(tt)&&tt>0){
+    return {easyLo:tt+120*f, easyHi:tt+165*f, tempoLo:tt+50*f, tempoHi:tt+70*f, src:"mile"};
+  }
+  if(!isNaN(easy)&&easy>0){
+    return {easyLo:easy-10*f, easyHi:easy+20*f, tempoLo:easy-65*f, tempoHi:easy-40*f, src:"easy"};
+  }
+  return null;
+}
+function paceLineFor(runMeta){
+  const p=derivePaces();
+  const unit="/"+(S.run.unit||"mi");
+  if(!p){
+    if(runMeta.kind==="tempo") return "Effort — easy = conversational · tempo = comfortably hard";
+    return "Effort — easy/conversational, able to talk in full sentences";
+  }
+  const easy=`${fmtPace(p.easyLo)}–${fmtPace(p.easyHi)} ${unit}`;
+  if(runMeta.kind==="tempo"){
+    return `Easy ${easy} · Tempo ${fmtPace(p.tempoLo)}–${fmtPace(p.tempoHi)} ${unit}`;
+  }
+  return `Target ${easy}`;
+}
+
+function entry(week,day){
+  const k=lkey(week,day);
+  if(!S.log[k]) S.log[k]={done:false,entries:{},run:{},note:""};
+  return S.log[k];
+}
+function toast(msg){
+  const t=document.getElementById("toast"); t.textContent=msg; t.classList.add("show");
+  clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove("show"),1800);
+}
+
+/* ============================= RENDER ============================= */
+const $weeks=document.getElementById("weeks");
+const $days=document.getElementById("days");
+const $phase=document.getElementById("phase");
+const $prog=document.getElementById("prog");
+
+function weekComplete(n){
+  const days=daysFor(WEEKS[n-1]).filter(d=>!d.rest);
+  let done=0; days.forEach(d=>{ if((S.log[lkey(n,d.key)]||{}).done) done++; });
+  return {done, total:days.length};
+}
+function renderWeeks(){
+  $weeks.innerHTML="";
+  WEEKS.forEach(wk=>{
+    const c=weekComplete(wk.w);
+    const el=document.createElement("div");
+    el.className="wk"+(wk.w===S.ui.week?" active":"")+(wk.deload?" deload":"");
+    el.innerHTML=`<div class="n">${wk.w}</div><div class="l">${wk.deload?"DLD":"WK"}</div>
+      <div class="ring">${c.done}/${c.total}</div>`;
+    el.onclick=()=>{S.ui.week=wk.w;save();render();window.scrollTo({top:0,behavior:"smooth"});};
+    $weeks.appendChild(el);
+  });
+  // overall progress
+  let d=0,t=0; WEEKS.forEach(wk=>{const c=weekComplete(wk.w);d+=c.done;t+=c.total;});
+  $prog.style.width=(t?Math.round(d/t*100):0)+"%";
+}
+
+function renderDays(){
+  const week=WEEKS[S.ui.week-1];
+  $phase.innerHTML=`Week ${week.w} · <b>${week.phase}</b>${week.deload?" — back off, recover, prime for the push":""}`;
+  $days.innerHTML="";
+  daysFor(week).forEach(day=>{
+    const e=entry(week.w,day.key);
+    const card=document.createElement("div");
+    card.className="day"+(day.rest?" rest":"")+(e.done?" done":"");
+    const dotcls=day.type==="s"?"s":day.type==="r"?"r":"";
+    card.innerHTML=`
+      <div class="dhead">
+        <span class="dot ${dotcls}"></span>
+        <span class="dn">${day.dn}</span>
+        <span class="dt">${day.title}${day.sub?`<small>${day.sub}</small>`:""}</span>
+        ${day.rest?"":`<span class="check">${e.done?"✓ done":""}</span>`}
+        ${day.rest?"":`<span class="chev">▶</span>`}
+      </div>
+      <div class="body"></div>`;
+    const head=card.querySelector(".dhead");
+    const body=card.querySelector(".body");
+    if(!day.rest){
+      head.onclick=(ev)=>{ if(ev.target.closest("input,button"))return; card.classList.toggle("open"); };
+      if(day.type==="s") body.appendChild(strengthBody(week.w,day,e));
+      else body.appendChild(runBody(week.w,day,e));
+      body.appendChild(markBtn(week.w,day,e,card));
+    }
+    $days.appendChild(card);
+  });
+}
+
+function rampSets(workWeight){
+  // Returns guidance ramp sets up to the working weight. workWeight may be NaN.
+  if(isNaN(workWeight)||workWeight<=0){
+    return "Empty bar ×5 · ~50% ×5 · ~70% ×3 · ~85% ×2, then your working sets.";
+  }
+  const pcts=[{p:0,r:5,l:"bar"},{p:.5,r:5},{p:.7,r:3},{p:.85,r:2}];
+  const parts=pcts.map(s=>{
+    const w = s.l==="bar" ? "Bar" : roundLoad(workWeight*s.p)+S.units;
+    return `<b>${w}</b>×${s.r}`;
+  });
+  return parts.join(" · ") + ", then work sets.";
+}
+
+function strengthBody(wn,day,e){
+  const f=document.createElement("div");
+
+  // Warm-up: ramp off the heaviest main barbell lift (squat target for this week)
+  const squat=day.lifts.find(l=>l.id==="squat");
+  const squatTM=parseFloat(S.maxes.squat);
+  const squatWork = isNaN(squatTM)?NaN:squatTM*squat.pct/100;
+  const warm=document.createElement("div"); warm.className="warm";
+  warm.innerHTML=`
+    <div class="wh">Warm-up · 8–10 min</div>
+    <div class="wl">5 min easy bike/row/jog · world's greatest stretch ×5/side · band pull-apart 2×15 · hip airplane + ankle rocks · 10 bodyweight squats.</div>
+    <div class="ramp">Bar ramp (per lift): ${rampSets(squatWork)}</div>`;
+  f.appendChild(warm);
+
+  day.lifts.forEach(lf=>{
+    const v=e.entries[lf.id]||{};
+    const ex=document.createElement("div"); ex.className="ex";
+    ex.innerHTML=`
+      <div class="top"><span class="name">${lf.name}</span><span class="scheme">${lf.scheme}</span></div>
+      <div class="target">Target: <b>${targetFor(lf)}</b></div>
+      <div class="inputs">
+        <div class="fld"><label>Weight</label><input type="number" inputmode="decimal" value="${v.wt??""}" data-f="wt"></div>
+        <div class="fld"><label>Reps</label><input type="number" inputmode="numeric" value="${v.reps??""}" data-f="reps"></div>
+        <div class="fld"><label>RPE</label><input type="number" inputmode="decimal" value="${v.rpe??""}" data-f="rpe"></div>
+      </div>`;
+    ex.querySelectorAll("input").forEach(inp=>{
+      inp.addEventListener("input",()=>{
+        if(!e.entries[lf.id])e.entries[lf.id]={};
+        e.entries[lf.id][inp.dataset.f]=inp.value;
+        save();
+      });
+    });
+    f.appendChild(ex);
+  });
+  const accy=document.createElement("div"); accy.className="accy";
+  accy.innerHTML=`<b>Accessory</b><br>${day.accy}`;
+  f.appendChild(accy);
+  return f;
+}
+
+function runBody(wn,day,e){
+  const f=document.createElement("div");
+  const warm=document.createElement("div"); warm.className="warm";
+  warm.innerHTML=`
+    <div class="wh">Warm-up &amp; cooldown</div>
+    <div class="wl"><b style="color:var(--ink)">Before:</b> 3–4 min brisk walk into easy jog · leg swings front/side ×10 · walking lunges ×8/side · ankle circles · then build to pace.<br>
+    <b style="color:var(--ink)">After:</b> 3 min walk · calf, hip-flexor &amp; hamstring stretch ×30s each.</div>`;
+  f.appendChild(warm);
+
+  const box=document.createElement("div"); box.className="ex runbox";
+  box.innerHTML=`
+    <div class="cue">${day.run.cue}</div>
+    <div class="pacetag">${paceLineFor(day.run)}${day.run.strides?" · Strides relaxed, ~5K effort, walk back":""}</div>
+    <div class="why">${day.run.why}</div>
+    <div class="inputs">
+      <div class="fld"><label>Duration (min)</label><input type="number" inputmode="decimal" value="${e.run.dur??""}" data-f="dur"></div>
+      <div class="fld"><label>Distance</label><input type="number" inputmode="decimal" value="${e.run.dist??""}" data-f="dist"></div>
+    </div>
+    <div class="inputs"><div class="fld note" style="flex:1 0 100%"><label>Notes</label><input type="text" value="${(e.run.note??"").replace(/"/g,'&quot;')}" data-f="note"></div></div>`;
+  box.querySelectorAll("input").forEach(inp=>{
+    inp.addEventListener("input",()=>{ e.run[inp.dataset.f]=inp.value; save(); });
+  });
+  f.appendChild(box);
+  return f;
+}
+
+function markBtn(wn,day,e,card){
+  const wrap=document.createElement("div"); wrap.className="markrow";
+  const b=document.createElement("button"); b.className="btn go";
+  b.textContent=e.done?"✓ Completed — tap to undo":"Mark complete";
+  b.onclick=()=>{
+    e.done=!e.done; save();
+    card.classList.toggle("done",e.done);
+    b.textContent=e.done?"✓ Completed — tap to undo":"Mark complete";
+    card.querySelector(".check").textContent=e.done?"✓ done":"";
+    renderWeeks();
+    if(e.done) toast("Logged. Good work.");
+  };
+  wrap.appendChild(b);
+  return wrap;
+}
+
+/* ============================= MAXES / DATA VIEW ============================= */
+function renderMaxes(){
+  document.querySelectorAll("#unitseg button").forEach(b=>b.classList.toggle("on",b.dataset.u===S.units));
+  document.getElementById("m-squat").value=S.maxes.squat;
+  document.getElementById("m-bench").value=S.maxes.bench;
+  document.getElementById("m-deadlift").value=S.maxes.deadlift;
+  document.getElementById("m-pullup").value=S.maxes.pullup;
+  document.getElementById("e1rm-unit").textContent=S.units;
+  renderPaceCard();
+  renderBwLog();
+  renderChart();
+}
+
+/* ---- running paces ---- */
+function renderPaceCard(){
+  document.querySelectorAll("#paceseg button").forEach(b=>b.classList.toggle("on",b.dataset.pu===(S.run.unit||"mi")));
+  document.getElementById("r-tt").value=S.run.tt||"";
+  document.getElementById("r-easy").value=S.run.easy||"";
+  const p=derivePaces(); const box=document.getElementById("pacebox");
+  if(!p){ box.style.display="none"; return; }
+  const u="/"+(S.run.unit||"mi");
+  document.getElementById("p-easy").textContent=`${fmtPace(p.easyLo)}–${fmtPace(p.easyHi)} ${u}`;
+  document.getElementById("p-tempo").textContent=`${fmtPace(p.tempoLo)}–${fmtPace(p.tempoHi)} ${u}`;
+  box.style.display="block";
+}
+document.querySelectorAll("#paceseg button").forEach(b=>{
+  b.onclick=()=>{ S.run.unit=b.dataset.pu; save(); renderPaceCard(); };
+});
+document.getElementById("r-tt").addEventListener("input",e=>{ S.run.tt=e.target.value; save(); renderPaceCard(); });
+document.getElementById("r-easy").addEventListener("input",e=>{ S.run.easy=e.target.value; save(); renderPaceCard(); });
+
+/* ---- 1RM estimator ---- */
+function estimate1RM(){
+  const wt=parseFloat(document.getElementById("c-wt").value);
+  const reps=parseInt(document.getElementById("c-reps").value,10);
+  const box=document.getElementById("e1rm");
+  if(isNaN(wt)||wt<=0||isNaN(reps)||reps<1){ box.style.display="none"; return; }
+  if(reps===1){ var e1=wt; }
+  else{
+    const epley = wt*(1+reps/30);
+    const brzycki = wt*36/(37-Math.min(reps,35));
+    var e1=(epley+brzycki)/2;
+  }
+  const e1r=roundLoad(e1), tm=roundLoad(e1*0.9);
+  document.getElementById("e1rm-val").textContent=e1r;
+  document.getElementById("e1rm-unit").textContent=S.units;
+  document.getElementById("e1rm-tm").textContent=tm+" "+S.units;
+  box.style.display="block";
+  box.dataset.tm=tm;
+}
+["c-wt","c-reps"].forEach(id=>document.getElementById(id).addEventListener("input",estimate1RM));
+document.getElementById("c-apply").onclick=()=>{
+  const lift=document.getElementById("c-lift").value;
+  const tm=document.getElementById("e1rm").dataset.tm;
+  if(!tm) return;
+  S.maxes[lift]=tm; save();
+  document.getElementById("m-"+lift).value=tm;
+  toast(lift+" max set to "+tm+" "+S.units);
+};
+
+/* ---- Trends chart (dependency-free SVG) ---- */
+let chartMetric="bodyweight";
+document.querySelectorAll("#chartseg button").forEach(b=>{
+  b.onclick=()=>{
+    chartMetric=b.dataset.m;
+    document.querySelectorAll("#chartseg button").forEach(x=>x.classList.toggle("on",x===b));
+    renderChart();
+  };
+});
+function chartSeries(metric){
+  if(metric==="bodyweight"){
+    return S.bodyweight.map((r,i)=>({x:i,y:parseFloat(r.w),label:r.date})).filter(p=>!isNaN(p.y));
+  }
+  // strength: walk weeks 1..8, days mon/wed/fri in order, pull logged working weight
+  const order=["mon","wed","fri"]; const pts=[]; let i=0;
+  for(let w=1;w<=WEEKS.length;w++){
+    for(const d of order){
+      const rec=(S.log[lkey(w,d)]||{}).entries||{};
+      const v=rec[metric]&&parseFloat(rec[metric].wt);
+      if(!isNaN(v)&&v>0){ pts.push({x:i,y:v,label:"W"+w+" "+d[0].toUpperCase()+d.slice(1,3)}); }
+      i++;
+    }
+  }
+  return pts;
+}
+function renderChart(){
+  const wrap=document.getElementById("chartwrap");
+  const meta=document.getElementById("chartmeta");
+  const pts=chartSeries(chartMetric);
+  if(pts.length<1){
+    wrap.innerHTML=`<div class="chartempty">No data yet.<br>${chartMetric==="bodyweight"?"Log a few weigh-ins":"Log working weights on this lift"} and the trend appears here.</div>`;
+    meta.innerHTML=""; return;
+  }
+  const W=600,H=210,pad=14,padB=20;
+  const ys=pts.map(p=>p.y);
+  let min=Math.min(...ys), max=Math.max(...ys);
+  if(min===max){ min-=5; max+=5; }
+  const range=max-min;
+  const n=pts.length;
+  const xAt=i=> pad + (n===1?0.5: i/(n-1))*(W-2*pad);
+  const yAt=v=> (H-padB) - ((v-min)/range)*(H-padB-pad);
+  const line=pts.map((p,i)=>`${i?"L":"M"}${xAt(i).toFixed(1)},${yAt(p.y).toFixed(1)}`).join(" ");
+  const area=`${line} L${xAt(n-1).toFixed(1)},${H-padB} L${xAt(0).toFixed(1)},${H-padB} Z`;
+  const dots=pts.map((p,i)=>`<circle cx="${xAt(i).toFixed(1)}" cy="${yAt(p.y).toFixed(1)}" r="${n>20?2:3}" fill="#e0972e"/>`).join("");
+  // gridlines at min / mid / max
+  const grids=[max,(max+min)/2,min].map(v=>{
+    const y=yAt(v).toFixed(1);
+    return `<line x1="${pad}" y1="${y}" x2="${W-pad}" y2="${y}" stroke="#2e333c" stroke-width="1"/>
+            <text x="${W-pad}" y="${(+y-3).toFixed(1)}" fill="#5c626d" font-size="11" text-anchor="end" font-family="monospace">${roundLoad(v)}</text>`;
+  }).join("");
+  wrap.innerHTML=`<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="trend chart">
+    ${grids}
+    <path d="${area}" fill="#e0972e22"/>
+    <path d="${line}" fill="none" stroke="#e0972e" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+    ${dots}
+  </svg>`;
+  const first=pts[0].y, last=pts[n-1].y, diff=last-first;
+  const sign=diff>0?"+":"";
+  meta.innerHTML=`<span>${pts[0].label} → ${pts[n-1].label}</span>
+    <span>Latest <b>${last} ${S.units}</b> · ${sign}${roundLoad(diff)} overall</span>`;
+}
+
+function renderBwLog(){
+  const box=document.getElementById("bwlog"); box.innerHTML="";
+  [...S.bodyweight].reverse().forEach(r=>{
+    const d=document.createElement("div");
+    d.innerHTML=`<span>${r.date}</span><span>${r.w} ${S.units}</span>`;
+    box.appendChild(d);
+  });
+}
+
+document.querySelectorAll("#unitseg button").forEach(b=>{
+  b.onclick=()=>{ S.units=b.dataset.u; save(); renderMaxes(); if(curView==="train")renderDays(); };
+});
+["squat","bench","deadlift","pullup"].forEach(k=>{
+  document.getElementById("m-"+k).addEventListener("input",ev=>{ S.maxes[k]=ev.target.value; save(); });
+});
+document.getElementById("bw-add").onclick=()=>{
+  const v=document.getElementById("bw-in").value;
+  if(!v) return toast("Enter a weight first");
+  const date=new Date().toISOString().slice(0,10);
+  S.bodyweight.push({date,w:v}); save(); renderBwLog(); renderChart();
+  document.getElementById("bw-in").value=""; toast("Bodyweight logged");
+};
+
+/* ============================= EXPORT / IMPORT ============================= */
+document.getElementById("export").onclick=()=>{
+  S.schemaVersion=SCHEMA_VERSION; S.appVersion=APP_VERSION;
+  const json=JSON.stringify(S,null,2);
+  const fname=`fieldlog-backup-${new Date().toISOString().slice(0,10)}.json`;
+  // Native Android wrapper: save through the system file dialog.
+  if(window.AndroidBridge && typeof window.AndroidBridge.export==="function"){
+    try{ window.AndroidBridge.export(fname,json); toast("Choose where to save…"); return; }catch(e){}
+  }
+  const blob=new Blob([json],{type:"application/json"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url; a.download=fname;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+  toast("Backup exported");
+};
+document.getElementById("import").onclick=()=>document.getElementById("file").click();
+document.getElementById("file").onchange=(ev)=>{
+  const file=ev.target.files[0]; if(!file)return;
+  const r=new FileReader();
+  r.onload=()=>{
+    try{
+      const data=JSON.parse(r.result);
+      S=migrate(data); save(); render(); renderMaxes();
+      toast("Data imported ✓");
+    }catch(e){ toast("Couldn't read that file"); }
+  };
+  r.readAsText(file);
+  ev.target.value="";
+};
+document.getElementById("reset").onclick=()=>{
+  if(confirm("Erase all logged data on this device? Export first if you want a backup. This cannot be undone.")){
+    S=structuredClone(DEFAULT_STATE); save(); render(); renderMaxes(); toast("All data erased");
+  }
+};
+
+/* ============================= VIEW SWITCH ============================= */
+let curView="train";
+document.querySelectorAll(".tab").forEach(t=>{
+  t.onclick=()=>{
+    curView=t.dataset.view;
+    document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x===t));
+    document.getElementById("view-train").style.display=curView==="train"?"":"none";
+    document.getElementById("view-maxes").style.display=curView==="maxes"?"":"none";
+    if(curView==="maxes")renderMaxes(); else renderDays();
+    window.scrollTo({top:0});
+  };
+});
+
+function render(){ renderWeeks(); renderDays(); }
+render(); renderMaxes();
+
+/* ---- PWA: offline service worker + install prompt ---- */
+if("serviceWorker" in navigator){
+  window.addEventListener("load",()=>{
+    navigator.serviceWorker.register("service-worker.js").catch(()=>{});
+  });
+}
+let deferredPrompt=null;
+window.addEventListener("beforeinstallprompt",(e)=>{
+  e.preventDefault(); deferredPrompt=e;
+  const row=document.getElementById("installrow");
+  if(row) row.style.display="flex";
+});
+const installBtn=document.getElementById("install");
+if(installBtn){
+  installBtn.onclick=async()=>{
+    if(!deferredPrompt) return;
+    deferredPrompt.prompt();
+    await deferredPrompt.userChoice;
+    deferredPrompt=null;
+    document.getElementById("installrow").style.display="none";
+  };
+}
+window.addEventListener("appinstalled",()=>{
+  const row=document.getElementById("installrow"); if(row) row.style.display="none";
+  toast("Installed ✓");
+});
+</script>
+</body>
+</html>
