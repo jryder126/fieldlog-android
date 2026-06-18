@@ -87,6 +87,16 @@
     border-radius:7px;padding:9px 8px;font-family:var(--mono);font-size:15px;text-align:center}
   .fld input:focus{outline:none;border-color:var(--amber)}
   .note input{text-align:left;font-family:var(--sans)}
+  /* Per-set logging grid */
+  .setgrid{display:flex;flex-direction:column;gap:6px;margin-top:9px}
+  .setrow{display:grid;grid-template-columns:26px 1fr 1fr 1fr;gap:8px;align-items:center}
+  .setrow.head span{font-family:var(--mono);font-size:9px;color:var(--faint);
+    letter-spacing:.12em;text-transform:uppercase;text-align:center}
+  .setrow .setno{font-family:var(--mono);font-size:13px;color:var(--faint);text-align:center}
+  .setrow input{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--ink);
+    border-radius:7px;padding:9px 6px;font-family:var(--mono);font-size:15px;text-align:center}
+  .setrow input:focus{outline:none;border-color:var(--amber)}
+  .setrow input::placeholder{color:var(--faint);opacity:.55}
   .accy{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin-top:10px;line-height:1.6}
   .accy b{color:var(--faint);letter-spacing:.1em;text-transform:uppercase;font-size:9.5px}
 
@@ -300,7 +310,7 @@
 "use strict";
 /* ============================= PLAN DATA ============================= */
 const SCHEMA_VERSION = 2;
-const APP_VERSION = "v3";
+const APP_VERSION = "v4";
 
 // Main cluster wave (Squat / Bench / Weighted Pull-up) — same load all 3 strength days that week.
 // pct is % of training max. deadlift has its own lighter wave (Friday only).
@@ -335,21 +345,21 @@ function daysFor(week){
   const sc = `${c.sets}×${c.reps} @ ${c.pct}%`;
   return [
     {key:"mon", dn:"Mon", type:"s", title:"Strength A", sub:"Squat · Bench · Pull-up",
-      lifts:[lift("squat","Back Squat",sc,c.pct),lift("bench","Bench Press",sc,c.pct),lift("pullup","Weighted Pull-up",sc,c.pct,true)],
+      lifts:[lift("squat","Back Squat",sc,c.pct,c.sets,c.reps),lift("bench","Bench Press",sc,c.pct,c.sets,c.reps),lift("pullup","Weighted Pull-up",sc,c.pct,c.sets,c.reps,true)],
       accy:ACCESSORIES.A},
     {key:"tue", dn:"Tue", type:"r", title:"Easy run", sub:week.run.tue, run:{cue:week.run.tue, kind:"easy", strides:false, why:"Conversational pace — you should be able to talk. Building the aerobic base and durability."}},
     {key:"wed", dn:"Wed", type:"s", title:"Strength B", sub:"Squat · Bench · Pull-up",
-      lifts:[lift("squat","Back Squat",sc,c.pct),lift("bench","Bench Press",sc,c.pct),lift("pullup","Weighted Pull-up",sc,c.pct,true)],
+      lifts:[lift("squat","Back Squat",sc,c.pct,c.sets,c.reps),lift("bench","Bench Press",sc,c.pct,c.sets,c.reps),lift("pullup","Weighted Pull-up",sc,c.pct,c.sets,c.reps,true)],
       accy:ACCESSORIES.B},
     {key:"thu", dn:"Thu", type:"r", title:week.tempo?"Tempo run":"Easy run", sub:week.run.thu, run:{cue:week.run.thu, kind:week.tempo?"tempo":"easy", strides:!!week.strides&&!week.tempo, why:week.tempo?"Tempo = comfortably hard, controlled. Easy jog between/around the hard pieces.":"Easy aerobic. Add strides (relaxed near-sprints, not all-out) if prescribed."}},
     {key:"fri", dn:"Fri", type:"s", title:"Strength C", sub:"Squat · Bench · Pull-up · Deadlift",
-      lifts:[lift("squat","Back Squat",sc,c.pct),lift("bench","Bench Press",sc,c.pct),lift("pullup","Weighted Pull-up",sc,c.pct,true),lift("deadlift","Deadlift",`${dl.sets}×${dl.reps} @ ${dl.pct}%`,dl.pct)],
+      lifts:[lift("squat","Back Squat",sc,c.pct,c.sets,c.reps),lift("bench","Bench Press",sc,c.pct,c.sets,c.reps),lift("pullup","Weighted Pull-up",sc,c.pct,c.sets,c.reps,true),lift("deadlift","Deadlift",`${dl.sets}×${dl.reps} @ ${dl.pct}%`,dl.pct,dl.sets,dl.reps)],
       accy:ACCESSORIES.C},
     {key:"sat", dn:"Sat", type:"r", title:"Long run", sub:week.run.sat, run:{cue:week.run.sat, kind:"long", strides:false, why:"All easy. This is your weekly endurance builder — keep it slow, finish feeling you could do more."}},
     {key:"sun", dn:"Sun", type:"rest", title:"Rest", sub:"Walk, stretch, recover", rest:true},
   ];
 }
-function lift(id,name,scheme,pct,added){return {id,name,scheme,pct,added:!!added};}
+function lift(id,name,scheme,pct,sets,reps,added){return {id,name,scheme,pct,sets:sets||1,reps:reps||"",added:!!added};}
 
 /* ============================= STATE ============================= */
 const DEFAULT_STATE = {
@@ -359,7 +369,7 @@ const DEFAULT_STATE = {
   maxes: {squat:"", bench:"", deadlift:"", pullup:""},
   bodyweight: [],     // [{date, w}]
   run: {unit:"mi", tt:"", easy:""},   // pace reference: timed mile/km OR current easy pace (mm:ss)
-  log: {},            // key `w{n}-{day}` -> {done, entries:{liftId:{wt,reps,rpe}}, run:{dur,dist,note}, note}
+  log: {},            // key `w{n}-{day}` -> {done, entries:{liftId:[{wt,reps,rpe},…per set]}, run:{dur,dist,note}, note}
   ui: {week:1}
 };
 let S = load();
@@ -405,6 +415,23 @@ function targetFor(lift){
   }
   if(isNaN(tm)||tm<=0) return "set max →";
   return roundLoad(tm*lift.pct/100) + " " + S.units;
+}
+// Numeric target weight for placeholders ("" if no max set). For pull-ups this
+// is the *added* weight on top of bodyweight.
+function targetWeightNum(lf){
+  const tm=parseFloat(S.maxes[lf.id]);
+  if(isNaN(tm)||tm<=0) return "";
+  return roundLoad(tm*lf.pct/100);
+}
+// Returns the array of per-set entries for a lift, migrating the older single
+// {wt,reps,rpe} shape to a one-element array in place. Never truncates.
+function getSets(e,lf){
+  let rec=e.entries[lf.id];
+  if(!Array.isArray(rec)){
+    rec = (rec && typeof rec==="object") ? [{wt:rec.wt,reps:rec.reps,rpe:rec.rpe}] : [];
+    e.entries[lf.id]=rec;
+  }
+  return rec;
 }
 function lkey(week,day){return `w${week}-${day}`;}
 
@@ -550,20 +577,31 @@ function strengthBody(wn,day,e){
   f.appendChild(warm);
 
   day.lifts.forEach(lf=>{
-    const v=e.entries[lf.id]||{};
+    const rec=getSets(e,lf);
+    const ph=targetWeightNum(lf);
     const ex=document.createElement("div"); ex.className="ex";
+    let rows="";
+    for(let i=0;i<lf.sets;i++){
+      const v=rec[i]||{};
+      rows+=`<div class="setrow">
+        <span class="setno">${i+1}</span>
+        <input type="number" inputmode="decimal" value="${v.wt??""}" placeholder="${ph}" data-i="${i}" data-f="wt" aria-label="Set ${i+1} weight">
+        <input type="number" inputmode="numeric" value="${v.reps??""}" placeholder="${lf.reps}" data-i="${i}" data-f="reps" aria-label="Set ${i+1} reps">
+        <input type="number" inputmode="decimal" value="${v.rpe??""}" placeholder="—" data-i="${i}" data-f="rpe" aria-label="Set ${i+1} RPE">
+      </div>`;
+    }
     ex.innerHTML=`
       <div class="top"><span class="name">${lf.name}</span><span class="scheme">${lf.scheme}</span></div>
       <div class="target">Target: <b>${targetFor(lf)}</b></div>
-      <div class="inputs">
-        <div class="fld"><label>Weight</label><input type="number" inputmode="decimal" value="${v.wt??""}" data-f="wt"></div>
-        <div class="fld"><label>Reps</label><input type="number" inputmode="numeric" value="${v.reps??""}" data-f="reps"></div>
-        <div class="fld"><label>RPE</label><input type="number" inputmode="decimal" value="${v.rpe??""}" data-f="rpe"></div>
+      <div class="setgrid">
+        <div class="setrow head"><span>Set</span><span>Weight</span><span>Reps</span><span>RPE</span></div>
+        ${rows}
       </div>`;
-    ex.querySelectorAll("input").forEach(inp=>{
+    ex.querySelectorAll(".setrow input").forEach(inp=>{
       inp.addEventListener("input",()=>{
-        if(!e.entries[lf.id])e.entries[lf.id]={};
-        e.entries[lf.id][inp.dataset.f]=inp.value;
+        const i=+inp.dataset.i;
+        if(!rec[i])rec[i]={};
+        rec[i][inp.dataset.f]=inp.value;
         save();
       });
     });
@@ -695,7 +733,14 @@ function chartSeries(metric){
   for(let w=1;w<=WEEKS.length;w++){
     for(const d of order){
       const rec=(S.log[lkey(w,d)]||{}).entries||{};
-      const v=rec[metric]&&parseFloat(rec[metric].wt);
+      const slot=rec[metric];
+      let v=NaN;
+      if(Array.isArray(slot)){            // new per-set shape: take the top working set
+        const ws=slot.map(s=>parseFloat(s&&s.wt)).filter(x=>!isNaN(x)&&x>0);
+        if(ws.length) v=Math.max(...ws);
+      }else if(slot&&typeof slot==="object"){  // legacy single entry
+        v=parseFloat(slot.wt);
+      }
       if(!isNaN(v)&&v>0){ pts.push({x:i,y:v,label:"W"+w+" "+d[0].toUpperCase()+d.slice(1,3)}); }
       i++;
     }
