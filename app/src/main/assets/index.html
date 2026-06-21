@@ -219,6 +219,30 @@
     </div>
 
     <div class="card">
+      <h2>Auto-Progression</h2>
+      <p>When you mark a strength day complete, the hardest set's RPE — read as a percentage (RPE 6.5 = 65%) — decides how fast that lift's training max climbs. Easier sessions bump it sooner.</p>
+      <div class="unitrow">
+        <span>Auto-progress</span>
+        <div class="seg" id="progseg">
+          <button data-pe="on">On</button><button data-pe="off">Off</button>
+        </div>
+      </div>
+      <div class="maxgrid">
+        <div class="fld"><label>Easy below (%)</label><input id="p-low" type="number" inputmode="numeric" placeholder="65"></div>
+        <div class="fld"><label>Hard at/above (%)</label><input id="p-high" type="number" inputmode="numeric" placeholder="85"></div>
+      </div>
+      <div class="maxgrid" style="margin-top:10px">
+        <div class="fld"><label>Bump every · easy</label><input id="p-nlow" type="number" inputmode="numeric" placeholder="1"></div>
+        <div class="fld"><label>Bump every · medium</label><input id="p-nmid" type="number" inputmode="numeric" placeholder="2"></div>
+        <div class="fld"><label>Bump every · hard</label><input id="p-nhigh" type="number" inputmode="numeric" placeholder="3"></div>
+        <div class="fld"><label>Step (<span id="p-stepunit">lb</span>)</label><input id="p-step" type="number" inputmode="decimal" placeholder="5"></div>
+      </div>
+      <p class="hint">"Bump every N" = completed strength workouts at that effort before the training max rises one step. <b>Easy</b> = effort under the low threshold, <b>medium</b> = between the two, <b>hard</b> = at or above the high threshold. Counts are per lift and reset after each bump. A session with no RPE logged is skipped.</p>
+      <div class="bwlog" id="proglog"></div>
+      <div class="dataline"><button class="btn" id="p-resetcounters">Reset progress counters</button></div>
+    </div>
+
+    <div class="card">
       <h2>1RM Estimator</h2>
       <p>Don't know your max? Enter a recent set you took close to failure (≤10 reps is most accurate) and let it estimate your one-rep max — then drop a sensible training max straight into the plan.</p>
       <div class="selrow" style="margin-bottom:10px">
@@ -302,15 +326,15 @@
     </div>
   </div>
 
-  <footer>FIELDLOG v3 · TRAIN HARD · LOG HONEST</footer>
+  <footer>FIELDLOG v5 · TRAIN HARD · LOG HONEST</footer>
 </div>
 <div class="toast" id="toast"></div>
 
 <script>
 "use strict";
 /* ============================= PLAN DATA ============================= */
-const SCHEMA_VERSION = 2;
-const APP_VERSION = "v4";
+const SCHEMA_VERSION = 3;
+const APP_VERSION = "v5";
 
 // Main cluster wave (Squat / Bench / Weighted Pull-up) — same load all 3 strength days that week.
 // pct is % of training max. deadlift has its own lighter wave (Friday only).
@@ -370,6 +394,17 @@ const DEFAULT_STATE = {
   bodyweight: [],     // [{date, w}]
   run: {unit:"mi", tt:"", easy:""},   // pace reference: timed mile/km OR current easy pace (mm:ss)
   log: {},            // key `w{n}-{day}` -> {done, entries:{liftId:[{wt,reps,rpe},…per set]}, run:{dur,dist,note}, note}
+  // Auto-progression: the hardest working set's RPE (read as a %, RPE 6.5 = 65%)
+  // decides how many completed strength days at that effort are needed before a
+  // lift's training max climbs by one step. Counters are per lift; thresholds,
+  // cadence and step are user-adjustable in the Maxes & Data view.
+  progress: {
+    enabled: true,
+    lowPct: 65, highPct: 85,           // effort band boundaries (RPE×10)
+    nLow: 1, nMid: 2, nHigh: 3,        // completed workouts needed per band
+    stepLb: 5, stepKg: 2.5,            // training-max increment per bump
+    counters: {squat:0, bench:0, deadlift:0, pullup:0}
+  },
   ui: {week:1}
 };
 let S = load();
@@ -397,6 +432,15 @@ function migrate(data){
     if(typeof data.run.easy==="string") out.run.easy=data.run.easy;
   }
   if(data.log && typeof data.log==="object") out.log=data.log;
+  if(data.progress && typeof data.progress==="object"){
+    const p=data.progress, o=out.progress;
+    if(typeof p.enabled==="boolean") o.enabled=p.enabled;
+    ["lowPct","highPct","nLow","nMid","nHigh","stepLb","stepKg"].forEach(k=>{
+      const v=parseFloat(p[k]); if(!isNaN(v)) o[k]=v;
+    });
+    if(p.counters && typeof p.counters==="object")
+      for(const k in o.counters){ const v=parseInt(p.counters[k],10); if(!isNaN(v)&&v>=0) o.counters[k]=v; }
+  }
   if(data.ui && data.ui.week) out.ui.week=data.ui.week;
   out.schemaVersion=SCHEMA_VERSION; out.appVersion=APP_VERSION;
   return out;
@@ -491,6 +535,60 @@ function toast(msg){
   const t=document.getElementById("toast"); t.textContent=msg; t.classList.add("show");
   clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove("show"),1800);
 }
+
+/* ============================= AUTO-PROGRESSION ============================= */
+function progStep(){
+  const p=S.progress;
+  return S.units==="kg" ? (parseFloat(p.stepKg)||2.5) : (parseFloat(p.stepLb)||5);
+}
+// Workouts required at a given effort% before a lift's training max bumps.
+function progReqFor(effortPct){
+  const p=S.progress;
+  if(effortPct < p.lowPct) return Math.max(1, p.nLow|0 || 1);
+  if(effortPct < p.highPct) return Math.max(1, p.nMid|0 || 1);
+  return Math.max(1, p.nHigh|0 || 1);
+}
+// Governing effort for a lift this session = hardest (highest-RPE) working set,
+// read as a percentage (RPE×10). Returns NaN when no RPE was logged.
+function effortPctFor(e,lf){
+  const sets=getSets(e,lf);
+  let maxRpe=NaN;
+  sets.forEach(s=>{ const r=parseFloat(s&&s.rpe); if(!isNaN(r)&&(isNaN(maxRpe)||r>maxRpe)) maxRpe=r; });
+  return isNaN(maxRpe) ? NaN : maxRpe*10;
+}
+// Called when a strength day is marked complete. For each main lift that logged
+// an RPE and has a numeric training max, advance its counter and — once the
+// band's required count is reached — raise the training max by one step. The
+// exact deltas are recorded on the entry so undo can reverse them precisely.
+function applyProgression(day,e){
+  if(!S.progress.enabled || e.progApplied) return;
+  const step=progStep();
+  const detail=[];
+  (day.lifts||[]).forEach(lf=>{
+    const effort=effortPctFor(e,lf);
+    if(isNaN(effort)) return;                       // no effort logged → skip
+    const tm=parseFloat(S.maxes[lf.id]);
+    if(isNaN(tm)) return;                            // no base max → nothing to scale
+    const from=S.progress.counters[lf.id]|0;
+    const req=progReqFor(effort);
+    let count=from+1, tmDelta=0;
+    if(count>=req){ tmDelta=step; count=0; S.maxes[lf.id]=tm+step; }
+    S.progress.counters[lf.id]=count;
+    detail.push({id:lf.id, from, to:count, tmDelta});
+  });
+  e.progApplied=true; e.progDetail=detail;
+  const bumped=detail.filter(d=>d.tmDelta>0).map(d=>d.id);
+  return bumped;
+}
+function revertProgression(e){
+  if(!e.progApplied) return;
+  (e.progDetail||[]).slice().reverse().forEach(d=>{
+    if(d.tmDelta){ const tm=parseFloat(S.maxes[d.id]); if(!isNaN(tm)) S.maxes[d.id]=tm-d.tmDelta; }
+    S.progress.counters[d.id]=d.from;
+  });
+  e.progApplied=false; delete e.progDetail;
+}
+const LIFT_LABEL={squat:"Squat",bench:"Bench",deadlift:"Deadlift",pullup:"Pull-up"};
 
 /* ============================= RENDER ============================= */
 const $weeks=document.getElementById("weeks");
@@ -644,12 +742,22 @@ function markBtn(wn,day,e,card){
   const b=document.createElement("button"); b.className="btn go";
   b.textContent=e.done?"✓ Completed — tap to undo":"Mark complete";
   b.onclick=()=>{
-    e.done=!e.done; save();
+    e.done=!e.done;
+    let bumped=null;
+    if(e.done && day.type==="s") bumped=applyProgression(day,e);
+    else if(!e.done) revertProgression(e);
+    save();
     card.classList.toggle("done",e.done);
     b.textContent=e.done?"✓ Completed — tap to undo":"Mark complete";
     card.querySelector(".check").textContent=e.done?"✓ done":"";
     renderWeeks();
-    if(e.done) toast("Logged. Good work.");
+    if(curView==="maxes") renderMaxes();
+    if(e.done){
+      if(bumped && bumped.length){
+        const names=bumped.map(id=>LIFT_LABEL[id]||id).join(", ");
+        toast(`Training max up +${progStep()} ${S.units}: ${names}`);
+      }else toast("Logged. Good work.");
+    }
   };
   wrap.appendChild(b);
   return wrap;
@@ -663,10 +771,55 @@ function renderMaxes(){
   document.getElementById("m-deadlift").value=S.maxes.deadlift;
   document.getElementById("m-pullup").value=S.maxes.pullup;
   document.getElementById("e1rm-unit").textContent=S.units;
+  renderProgressCard();
   renderPaceCard();
   renderBwLog();
   renderChart();
 }
+
+/* ---- auto-progression settings ---- */
+function renderProgressCard(){
+  const p=S.progress;
+  document.querySelectorAll("#progseg button").forEach(b=>b.classList.toggle("on",(b.dataset.pe==="on")===!!p.enabled));
+  document.getElementById("p-low").value=p.lowPct;
+  document.getElementById("p-high").value=p.highPct;
+  document.getElementById("p-nlow").value=p.nLow;
+  document.getElementById("p-nmid").value=p.nMid;
+  document.getElementById("p-nhigh").value=p.nHigh;
+  document.getElementById("p-step").value=S.units==="kg"?p.stepKg:p.stepLb;
+  document.getElementById("p-stepunit").textContent=S.units;
+  const box=document.getElementById("proglog"); box.innerHTML="";
+  ["squat","bench","deadlift","pullup"].forEach(id=>{
+    const c=p.counters[id]|0;
+    const d=document.createElement("div");
+    d.innerHTML=`<span>${LIFT_LABEL[id]}</span><span>${c} toward next bump</span>`;
+    box.appendChild(d);
+  });
+}
+document.querySelectorAll("#progseg button").forEach(b=>{
+  b.onclick=()=>{ S.progress.enabled=(b.dataset.pe==="on"); save(); renderProgressCard(); };
+});
+function bindProgNum(inputId, key, opts){
+  document.getElementById(inputId).addEventListener("input",ev=>{
+    let v=parseFloat(ev.target.value);
+    if(isNaN(v)) return;                       // ignore empty/partial; keep last good value
+    if(opts&&opts.min!=null) v=Math.max(opts.min,v);
+    if(opts&&opts.int) v=Math.round(v);
+    if(key==="step"){ if(S.units==="kg") S.progress.stepKg=v; else S.progress.stepLb=v; }
+    else S.progress[key]=v;
+    save();
+  });
+}
+bindProgNum("p-low","lowPct",{min:0});
+bindProgNum("p-high","highPct",{min:0});
+bindProgNum("p-nlow","nLow",{min:1,int:true});
+bindProgNum("p-nmid","nMid",{min:1,int:true});
+bindProgNum("p-nhigh","nHigh",{min:1,int:true});
+bindProgNum("p-step","step",{min:0});
+document.getElementById("p-resetcounters").onclick=()=>{
+  S.progress.counters={squat:0,bench:0,deadlift:0,pullup:0};
+  save(); renderProgressCard(); toast("Progress counters reset");
+};
 
 /* ---- running paces ---- */
 function renderPaceCard(){
