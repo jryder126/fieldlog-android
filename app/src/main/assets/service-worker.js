@@ -1,4 +1,4 @@
-const CACHE = "fieldlog-v5";
+const CACHE = "fieldlog-v6";
 const ASSETS = [
   "./",
   "./index.html",

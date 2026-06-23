@@ -79,6 +79,10 @@
   .ex .scheme{font-family:var(--mono);font-size:11px;color:var(--amber);white-space:nowrap}
   .ex .target{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:3px}
   .ex .target b{color:var(--ink)}
+  .ex .rec{font-family:var(--mono);font-size:12px;color:var(--ink);margin-top:4px}
+  .ex .rec b{color:var(--amber)}
+  .ex .rec small{color:var(--muted);font-size:11px}
+  .ex .rec .up{color:var(--amber)}
   .inputs{display:flex;gap:8px;margin-top:9px;flex-wrap:wrap}
   .fld{flex:1;min-width:64px}
   .fld label{display:block;font-family:var(--mono);font-size:9px;color:var(--faint);
@@ -220,7 +224,7 @@
 
     <div class="card">
       <h2>Auto-Progression</h2>
-      <p>When you mark a strength day complete, the hardest set's RPE — read as a percentage (RPE 6.5 = 65%) — decides how fast that lift's training max climbs. Easier sessions bump it sooner.</p>
+      <p>Each strength day shows a <b>recommended weight</b> per lift, based on what you lifted last time and how hard it was. The hardest set's RPE — read as a percentage (RPE 6.5 = 65%) — decides how fast the weight climbs: easier sessions step up sooner. The same cadence also nudges that lift's training max.</p>
       <div class="unitrow">
         <span>Auto-progress</span>
         <div class="seg" id="progseg">
@@ -229,7 +233,7 @@
       </div>
       <div class="maxgrid">
         <div class="fld"><label>Easy below (%)</label><input id="p-low" type="number" inputmode="numeric" placeholder="65"></div>
-        <div class="fld"><label>Hard at/above (%)</label><input id="p-high" type="number" inputmode="numeric" placeholder="85"></div>
+        <div class="fld"><label>Hard at/above (%)</label><input id="p-high" type="number" inputmode="numeric" placeholder="80"></div>
       </div>
       <div class="maxgrid" style="margin-top:10px">
         <div class="fld"><label>Bump every · easy</label><input id="p-nlow" type="number" inputmode="numeric" placeholder="1"></div>
@@ -237,7 +241,7 @@
         <div class="fld"><label>Bump every · hard</label><input id="p-nhigh" type="number" inputmode="numeric" placeholder="3"></div>
         <div class="fld"><label>Step (<span id="p-stepunit">lb</span>)</label><input id="p-step" type="number" inputmode="decimal" placeholder="5"></div>
       </div>
-      <p class="hint">"Bump every N" = completed strength workouts at that effort before the training max rises one step. <b>Easy</b> = effort under the low threshold, <b>medium</b> = between the two, <b>hard</b> = at or above the high threshold. Counts are per lift and reset after each bump. A session with no RPE logged is skipped.</p>
+      <p class="hint">"Bump every N" = completed strength workouts at that effort before the recommended weight (and training max) rises one step. <b>Easy</b> = effort under the low threshold, <b>medium</b> = between the two, <b>hard</b> = at or above the high threshold. Counts are per lift and reset after each bump. A session with no RPE logged holds the weight. Defaults: easy below 65%, hard at/above 80% → +5 lb every workout / every 2 / every 3.</p>
       <div class="bwlog" id="proglog"></div>
       <div class="dataline"><button class="btn" id="p-resetcounters">Reset progress counters</button></div>
     </div>
@@ -326,7 +330,7 @@
     </div>
   </div>
 
-  <footer>FIELDLOG v5 · TRAIN HARD · LOG HONEST</footer>
+  <footer>FIELDLOG v6 · TRAIN HARD · LOG HONEST</footer>
 </div>
 <div class="toast" id="toast"></div>
 
@@ -334,7 +338,7 @@
 "use strict";
 /* ============================= PLAN DATA ============================= */
 const SCHEMA_VERSION = 3;
-const APP_VERSION = "v5";
+const APP_VERSION = "v6";
 
 // Main cluster wave (Squat / Bench / Weighted Pull-up) — same load all 3 strength days that week.
 // pct is % of training max. deadlift has its own lighter wave (Friday only).
@@ -400,7 +404,7 @@ const DEFAULT_STATE = {
   // cadence and step are user-adjustable in the Maxes & Data view.
   progress: {
     enabled: true,
-    lowPct: 65, highPct: 85,           // effort band boundaries (RPE×10)
+    lowPct: 65, highPct: 80,           // effort band boundaries (RPE×10)
     nLow: 1, nMid: 2, nHigh: 3,        // completed workouts needed per band
     stepLb: 5, stepKg: 2.5,            // training-max increment per bump
     counters: {squat:0, bench:0, deadlift:0, pullup:0}
@@ -590,6 +594,60 @@ function revertProgression(e){
 }
 const LIFT_LABEL={squat:"Squat",bench:"Bench",deadlift:"Deadlift",pullup:"Pull-up"};
 
+// Recommended next working weight for a lift, derived purely from logged history:
+// walk completed strength sessions in order and apply the same RPE-band cadence
+// used by auto-progression to the actual top-set weight you lifted. A session at
+// easy effort steps the recommendation up every workout, medium every 2, hard
+// every 3 (all adjustable). Returns {wt,lastWt,lastEffort,bumped} or null when
+// there's no logged history to base a recommendation on.
+const PROG_DAYS=["mon","wed","fri"];
+function recommendFor(liftId){
+  const sessions=[];
+  for(let w=1; w<=WEEKS.length; w++){
+    for(const d of PROG_DAYS){
+      const e=S.log[lkey(w,d)];
+      if(!e || !e.done) continue;                 // only completed strength days count
+      const rec=(e.entries||{})[liftId];
+      let top=NaN, rpe=NaN;
+      if(Array.isArray(rec)){
+        rec.forEach(s=>{
+          const x=parseFloat(s&&s.wt); if(!isNaN(x)&&x>0&&(isNaN(top)||x>top)) top=x;
+          const r=parseFloat(s&&s.rpe); if(!isNaN(r)&&(isNaN(rpe)||r>rpe)) rpe=r;
+        });
+      }else if(rec&&typeof rec==="object"){
+        const x=parseFloat(rec.wt); if(!isNaN(x)&&x>0) top=x;
+        const r=parseFloat(rec.rpe); if(!isNaN(r)) rpe=r;
+      }
+      if(!isNaN(top)&&top>0) sessions.push({wt:top, effort:isNaN(rpe)?NaN:rpe*10});
+    }
+  }
+  if(!sessions.length) return null;
+  // Replay the cadence over history; bumpedLast = did the most recent session
+  // cross a step boundary, i.e. should the next session go up?
+  let counter=0, bumpedLast=false;
+  sessions.forEach(s=>{
+    if(isNaN(s.effort)){ bumpedLast=false; return; }   // no RPE logged → hold weight
+    counter++;
+    if(counter>=progReqFor(s.effort)){ counter=0; bumpedLast=true; }
+    else bumpedLast=false;
+  });
+  const last=sessions[sessions.length-1];
+  const step = (S.progress.enabled && bumpedLast) ? progStep() : 0;
+  return {wt:roundLoad(last.wt+step), lastWt:last.wt, lastEffort:last.effort, bumped:step>0};
+}
+// Render the recommended-weight line and return the numeric placeholder to seed
+// the weight inputs (recommendation when available, else the %-of-TM target).
+function recLineFor(lf){
+  const r=recommendFor(lf.id);
+  if(!r) return {html:"", ph:targetWeightNum(lf)};
+  const pre = lf.added ? "BW + " : "";
+  const rpe = isNaN(r.lastEffort) ? "—" : (r.lastEffort/10);
+  const arrow = r.bumped ? ` <span class="up">↑${progStep()}</span>` : "";
+  const html=`<div class="rec">Recommended: <b>${pre}${r.wt} ${S.units}</b>${arrow} `
+    +`<small>(last: ${pre}${r.lastWt} ${S.units} @ RPE ${rpe})</small></div>`;
+  return {html, ph:r.wt};
+}
+
 /* ============================= RENDER ============================= */
 const $weeks=document.getElementById("weeks");
 const $days=document.getElementById("days");
@@ -676,7 +734,8 @@ function strengthBody(wn,day,e){
 
   day.lifts.forEach(lf=>{
     const rec=getSets(e,lf);
-    const ph=targetWeightNum(lf);
+    const recLine=recLineFor(lf);
+    const ph=recLine.ph;
     const ex=document.createElement("div"); ex.className="ex";
     let rows="";
     for(let i=0;i<lf.sets;i++){
@@ -691,6 +750,7 @@ function strengthBody(wn,day,e){
     ex.innerHTML=`
       <div class="top"><span class="name">${lf.name}</span><span class="scheme">${lf.scheme}</span></div>
       <div class="target">Target: <b>${targetFor(lf)}</b></div>
+      ${recLine.html}
       <div class="setgrid">
         <div class="setrow head"><span>Set</span><span>Weight</span><span>Reps</span><span>RPE</span></div>
         ${rows}
